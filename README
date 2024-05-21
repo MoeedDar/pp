@@ -1,0 +1,83 @@
+# PP - Parser Combinator for C
+
+Parser combinators are like legos but parsers. You have a collection of functions that you can combine to create a new parser. They're usually found in functional languages that have higher order functions and closures. C has none of that, yet with some sneaky tricks, we can replicate the same effect.
+
+## How to use
+
+PP has no dependencies, so simply clone the repository and include `pp.h` in your project.
+
+## Example
+
+```c
+
+#include "pp.h"
+#include "stdio.h"
+
+typedef struct {
+  const char* table_name;
+  int num_columns;
+  char** columns;
+} sql_select_statement;
+
+typedef struct {
+  const char* table_name;
+} sql_create_table;
+
+pp_parser_t* sql_identifier_parser() {
+  return pp_whitespace_delimited(pp_concat_string(
+    2,
+    (pp_parser_t*[]){
+      pp_alpha(),
+      pp_many(pp_alphanumeric_or_underscore()),
+    }
+  ));
+}
+
+pp_parser_t* sql_copying_identifier_parser(const char** identifier_ref) {
+  return pp_copy_string_ref(sql_identifier_parser(), identifier_ref);
+}
+
+pp_parser_t* sql_keyword_parser(const char* keyword) {
+  return pp_whitespace_delimited(pp_string_no_case(keyword));
+}
+
+pp_parser_t* sql_select_columns_parser(void* len_arr_ref) {
+  return pp_choice(
+    2,
+    (pp_parser_t*[]){
+      sql_keyword_parser("*"),
+      pp_copy_string_array_ref(
+        pp_comma_separated_list(bbql_identifier_parser()), len_arr_ref
+      ),
+    }
+  );
+}
+
+pp_parser_t* sql_select_statement_parser(sql_select_statement* statement) {
+  return pp_sequence(
+    4,
+    (pp_parser_t*[]){
+      sql_keyword_parser("SELECT"),
+      sql_select_columns_parser(&statement->num_columns),
+      sql_keyword_parser("FROM"),
+      sql_copying_identifier_parser(&statement->table_name),
+    }
+  );
+}
+
+int main() {
+  const char* query = "SELECT id, name, data FROM table WHERE id = 5";
+  sql_select_statement stmt;
+
+  pp_init_default_allocator();
+
+  pp_parser_t* parser = sql_select_statement_parser(&stmt);
+  pp_parse(parser, query);
+
+  for (int i = 0; i < stmt.num_columns; i++) {
+    printf("%s ", stmt.columns[i]);
+  }
+
+  pp_deinit_default_allocator();
+}
+```
